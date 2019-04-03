@@ -1,10 +1,10 @@
 {
-  "name": "altapay/magento2-payment",
+  "name": "altapay/magento2-3-community",
   "license": "MIT",
   "authors": [
     {
-      "name": "Martin Aarhof",
-      "email": "maa@scandesigns.dk",
+      "name": "Simion Zafiu",
+      "email": "simion.zafiu@valitor.com",
       "role": "Developer"
     }
   ],
