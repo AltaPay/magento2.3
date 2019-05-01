@@ -1,6 +1,19 @@
-# AltaPay plugin for Magento 2.3
+# Valitor-Omni plugin for Magento 2.3
 
 == Change log ==
+
+** Version 1.1.0
+
+    * Improvements:
+        ** Rebranding from Altapay to Valitor
+        ** Platform and plugin versioning information sent to the payment gateway
+        ** Added support for virtual products
+	
+    * Bug fix:
+        ** Validation Error not been shown at back button from checkout page
+        ** Order Status stall in "Pending"
+        ** Payment capture often fails
+
 
 ** Version 1.0.0
 
