@@ -172,14 +172,19 @@ class Generator
             }
 
             $orderlines = [];
+            $sendShipment = false;
             /** @var \Magento\Sales\Model\Order\Item $item */
             foreach ($order->getAllVisibleItems() as $item) {
+                $product_type = $item->getProductType();
                 $orderline = new OrderLine(
                     $item->getName(),
                     $item->getSku(),
                     $item->getQtyOrdered(),
                     $item->getOriginalPrice()
                 );
+                if($product_type != 'virtual' && $product_type != 'downloadable'){
+                    $sendShipment = true;
+                }
                 $orderline->setGoodsType('item');
                 //in case of cart rule discount, send tax after discount
                 $orderline->taxAmount = $item->getTaxAmount();
@@ -205,10 +210,11 @@ class Generator
                 $orderline->setGoodsType('handling');
                 $orderlines[] = $orderline;
             }
-            $shippingaddress = $order->getShippingMethod();
-            $method = isset($shippingaddress['method']) ? $shippingaddress['method'] : '';
-            $carrier_code = isset($shippingaddress['carrier_code']) ? $shippingaddress['carrier_code'] : '';
-            if(!empty($shippingaddress)){
+            if($sendShipment){
+             $shippingaddress = $order->getShippingMethod(true); 
+             $method = isset($shippingaddress['method']) ? $shippingaddress['method'] : '';
+             $carrier_code = isset($shippingaddress['carrier_code']) ? $shippingaddress['carrier_code'] : '';
+             if(!empty($shippingaddress)){
                $orderlines[] = (new OrderLine(
                 $method,
                 $carrier_code,
@@ -216,6 +222,7 @@ class Generator
                 $order->getShippingInclTax()
             ))->setGoodsType('shipment');  
            }
+       }     
            $request->setOrderLines($orderlines);
  
             try {
@@ -558,7 +565,7 @@ class Generator
      * @param Order $order
      * @return Customer
      */
-    private function setCustomer(Order $order)
+   private function setCustomer(Order $order)
     {
         $billingAddress = new Address();
         if ($order->getBillingAddress()) {
@@ -575,30 +582,36 @@ class Generator
         $customer = new Customer($billingAddress);
 
         if ($order->getShippingAddress()) {
-            $address = $order->getShippingAddress()->convertToArray();
-            $shippingAddress = new Address();
-            $shippingAddress->Email = $order->getShippingAddress()->getEmail();
-            $shippingAddress->Firstname = $address['firstname'];
-            $shippingAddress->Lastname = $address['lastname'];
-            $shippingAddress->Address = $address['street'];
-            $shippingAddress->City = $address['city'];
-            $shippingAddress->PostalCode = $address['postcode'];
-            $shippingAddress->Region = $address['region'] ?: '0';
-            $shippingAddress->Country = $address['country_id'];
-            $customer->setShipping($shippingAddress);
-        }
-
-        if ($order->getBillingAddress()) {
-            $customer->setEmail($order->getBillingAddress()->getEmail());
-            $customer->setPhone($order->getBillingAddress()->getTelephone());
-        } elseif ($order->getShippingAddress()) {
-            $customer->setEmail($order->getShippingAddress()->getEmail());
-            $customer->setPhone($order->getShippingAddress()->getTelephone());
-        }
-
-        return $customer;
+         $address = $order->getShippingAddress()->convertToArray();
+         $shippingAddress = new Address();
+         $shippingAddress->Email = $order->getShippingAddress()->getEmail();
+         $shippingAddress->Firstname = $address['firstname'];
+         $shippingAddress->Lastname = $address['lastname'];
+         $shippingAddress->Address = $address['street'];
+         $shippingAddress->City = $address['city'];
+         $shippingAddress->PostalCode = $address['postcode'];
+         $shippingAddress->Region = $address['region'] ?: '0';
+         $shippingAddress->Country = $address['country_id'];
+         $customer->setShipping($shippingAddress);
+     }
+     else{
+        $customer->setShipping($billingAddress);
     }
 
+    if ($order->getBillingAddress()) {
+        $customer->setEmail($order->getBillingAddress()->getEmail());
+        $customer->setPhone($order->getBillingAddress()->getTelephone());
+    } elseif ($order->getShippingAddress()) {
+        $customer->setEmail($order->getShippingAddress()->getEmail());
+        $customer->setPhone($order->getShippingAddress()->getTelephone());
+    }
+    else {
+        $customer->setEmail($order->getBillingAddress()->getEmail());
+        $customer->setPhone($order->getBillingAddress()->getTelephone());
+    } 
+
+    return $customer;
+}
     public function getCheckoutSession()
     {
         return $this->checkoutSession;
