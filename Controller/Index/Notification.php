@@ -21,7 +21,7 @@ class Notification extends Index implements CsrfAwareActionInterface
     /**
      * @inheritDoc
      */
-    public function validateForCsrf(RequestInterface $request): ?bool
+    public function validateForCsrf(RequestInterface $request): ? bool
     {
         return true;
     }
@@ -37,30 +37,34 @@ class Notification extends Index implements CsrfAwareActionInterface
 		 $this->writeLog();
 		 try {
 			if ($this->checkPost()) {
-            $post = $this->getRequest()->getPostValue();
+            $post = $this->getRequest()->getParams();
             //Set order status, if available from the payment gateway
             $merchantErrorMsg = '';
-            $responseStatus = '';
+            $responseStatus = strtolower($post['status']);
             if (isset($post['error_message'])) {
                 $msg = $post['error_message'];
                 if($post['error_message'] != $post['error_message']){
 				  $merchantErrorMsg = $post['merchant_error_message'];
 				}
-                $responseStatus = $post['status'];
             } else {
-                $msg = 'Unknown response';
+                $msg = 'No error message found';
             }
-            switch ($post['status']) {
-                case 'cancelled':
+            switch (strtolower($post['status'])) {
+                case "cancelled":
                     $msg = "Payment canceled";
                     $this->generator->handleCancelStatusAction($this->getRequest(),$responseStatus);
                     break;
-                case ('failed' || 'error'):
+
+                case "failed":
+                case "error":
                     $this->generator->handleFailedStatusAction($this->getRequest(), $msg, $merchantErrorMsg, $responseStatus);
                     break;
-                case ('success' || 'succeed'):
+
+                case "success":
+                case "succeeded":
                     $this->generator->handleNotificationAction($this->getRequest());
-                    break;         
+                    break;
+
                 default:
                     $this->generator->handleCancelStatusAction($this->getRequest(),$responseStatus);
             }
@@ -69,7 +73,8 @@ class Notification extends Index implements CsrfAwareActionInterface
             $msg = $e->getMessage();
         }
 
-        if ($post['status'] != 'success' || $post['status'] != 'succeed') {
+        $orderStatus = strtolower($post['status']);
+        if ($orderStatus != 'success' || $orderStatus != 'succeeded') {
             $resultRedirect = $this->prepareRedirect('checkout/cart', array(), $msg);
         }
 

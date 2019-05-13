@@ -24,6 +24,13 @@ use Magento\Sales\Model\Order\Email\Sender\OrderSender;
 use SDM\Altapay\Model\ConstantConfig;
 use Magento\Framework\Module\ModuleListInterface;
 use Magento\Framework\App\ProductMetadataInterface;
+use Magento\Sales\Api\OrderRepositoryInterface;
+use Magento\Sales\Model\Service\InvoiceService;
+use Magento\Framework\DB\Transaction;
+use Magento\Sales\Model\Order\Email\Sender\InvoiceSender;
+use Magento\Sales\Model\Order\Invoice;
+use Magento\Shipping\Model\ShipmentNotifier;
+use Magento\Framework\DB\TransactionFactory;
 class Generator
 {    
     const MODULE_CODE = 'SDM_Altapay';
@@ -71,6 +78,10 @@ class Generator
      * @var OrderSender
      */
     private $orderSender;
+    /**
+     * @var InvoiceSender
+     */
+    private $invoiceSender;
 
     /**
      * @var SystemConfig
@@ -82,6 +93,31 @@ class Generator
      */
     private $_logger;
 
+     /**
+     * @var \Magento\Sales\Model\Service\InvoiceService
+     */
+     private $_invoiceService;
+
+    /**
+     * @var \Magento\Framework\DB\Transaction
+     */
+    private $_transaction;
+
+    /**
+     * @var \Magento\Sales\Api\OrderRepositoryInterface
+     */
+    private $_orderRepository;       
+    /**
+     * The ShipmentNotifier class is used to send a notification email to the customer.
+     *
+     * @var ShipmentNotifier
+     */
+    private $_shipmentNotifier;
+    /**
+     * @var \Magento\Framework\DB\TransactionFactory
+     */
+    private $transactionFactory;
+
     public function __construct(
         Quote $quote,
         UrlInterface $urlInterface,
@@ -90,10 +126,16 @@ class Generator
         Http $request,
         Order $order,
         OrderSender $orderSender,
+        InvoiceSender $invoiceSender,
         SystemConfig $systemConfig,
         Monolog $_logger,
         ModuleListInterface $moduleList,
-        ProductMetadataInterface $productMetadata
+        ProductMetadataInterface $productMetadata,
+        InvoiceService $invoiceService,
+        Transaction $transaction,
+        OrderRepositoryInterface $orderRepository,
+        ShipmentNotifier $shipmentNotifier,
+        TransactionFactory $transactionFactory
     ) {
         $this->quote = $quote;
         $this->urlInterface = $urlInterface;
@@ -106,6 +148,12 @@ class Generator
         $this->_logger = $_logger;
         $this->moduleList = $moduleList;
         $this->productMetadata = $productMetadata;
+        $this->_invoiceService = $invoiceService;
+        $this->_transaction = $transaction;
+        $this->_orderRepository = $orderRepository;
+        $this->invoiceSender = $invoiceSender;
+        $this->_shipmentNotifier = $shipmentNotifier;
+        $this->transactionFactory = $transactionFactory;
     }
 
     /**
@@ -134,6 +182,7 @@ class Generator
                 $requestParams['message'] = __(ConstantConfig::AUTH_MESSAGE);
                 return $requestParams;
             }
+            
             $versionDetails = array(); 
             $magentoVersion = $this->productMetadata->getVersion();
             $moduleInfo = $this->moduleList->getOne(self::MODULE_CODE);
@@ -167,7 +216,8 @@ class Generator
                 }
             }
 
-            if ($this->systemConfig->getTerminalConfig($terminalId, 'capture', $storeScope, $storeCode)) {
+            $autoCaptureEnable =  $this->systemConfig->getTerminalConfig($terminalId, 'capture', $storeScope, $storeCode);
+            if ($autoCaptureEnable) {
                 $request->setType('paymentAndCapture');
             }
 
@@ -182,6 +232,7 @@ class Generator
                     $item->getQtyOrdered(),
                     $item->getOriginalPrice()
                 );
+
                 if($product_type != 'virtual' && $product_type != 'downloadable'){
                     $sendShipment = true;
                 }
@@ -196,7 +247,7 @@ class Generator
                     $taxBeforeDiscount = ($item->getOriginalPrice() * $item->getTaxPercent())/100;
                     $taxAmount = $taxBeforeDiscount * $item->getQtyOrdered();
                     $orderline->taxAmount = $taxAmount;
-				}
+                }
                 $orderlines[] = $orderline;
             }
             if (abs($order->getDiscountAmount()) > 0) {
@@ -211,10 +262,10 @@ class Generator
                 $orderlines[] = $orderline;
             }
             if($sendShipment){
-             $shippingaddress = $order->getShippingMethod(true); 
-             $method = isset($shippingaddress['method']) ? $shippingaddress['method'] : '';
-             $carrier_code = isset($shippingaddress['carrier_code']) ? $shippingaddress['carrier_code'] : '';
-             if(!empty($shippingaddress)){
+             $shippingAddress = $order->getShippingMethod(true);
+             $method = isset($shippingAddress['method']) ? $shippingAddress['method'] : '';
+             $carrier_code = isset($shippingAddress['carrier_code']) ? $shippingAddress['carrier_code'] : '';
+             if(!empty($shippingAddress)){
                $orderlines[] = (new OrderLine(
                 $method,
                 $carrier_code,
@@ -293,6 +344,21 @@ class Generator
         }
     }
 
+    public function createInvoice($order){
+
+         if (!$order->getInvoiceCollection()->count()) {
+            $invoice = $this->_invoiceService->prepareInvoice($order);
+            $invoice->setRequestedCaptureCase(\Magento\Sales\Model\Order\Invoice::CAPTURE_OFFLINE);
+            $invoice->register();
+            $invoice->getOrder()->setCustomerNoteNotify(false);
+            $invoice->getOrder()->setIsInProcess(true);
+            $transactionSave = $this->transactionFactory->create()->addObject($invoice)->addObject($invoice->getOrder());
+            $transactionSave->save();
+
+
+        }  
+
+    }
     /**
      * @param RequestInterface $request
      * @return bool
@@ -449,7 +515,7 @@ class Generator
      */
     private function completeCheckout($comment, RequestInterface $request)
     {
-        $callback = new Callback($request->getPostValue());
+        $callback = new Callback($request->getParams());
         $response = $callback->call();
         if ($response) {
             $order = $this->loadOrderFromCallback($response);
@@ -484,16 +550,27 @@ class Generator
                     break;
                 }
             }
+            $orderStatusAfterPayment = $this->systemConfig->getStatusConfig('process', $storeScope, $storeCode);
+            $orderStatusCapture = $this->systemConfig->getStatusConfig('autocapture', $storeScope, $storeCode);
 
-            $orderStatusProcess = $this->systemConfig->getStatusConfig('process', $storeScope, $storeCode);
             if ($isCaptured) {
-                $this->setCustomOrderStatus($order, Order::STATE_COMPLETE, 'complete');
-                $order->addStatusHistoryComment(__(ConstantConfig::PAYMENT_COMPLETE));
+                if($orderStatusCapture == "complete"){
+                    $this->setCustomOrderStatus($order, Order::STATE_COMPLETE, 'autocapture');
+                    $order->addStatusHistoryComment(__(ConstantConfig::PAYMENT_COMPLETE));  
+                }
+
+                else{
+                    $this->setCustomOrderStatus($order, Order::STATE_PROCESSING, 'process');
+                }
+
             }else{
-				if($orderStatusProcess){
-			    $this->setCustomOrderStatus($order, Order::STATE_PROCESSING, 'process');
-			  }	
-			}
+                if($orderStatusAfterPayment){
+                   $this->setCustomOrderStatus($order, $orderStatusAfterPayment, 'process');
+
+               } else {
+                    $this->setCustomOrderStatus($order, Order::STATE_PROCESSING, 'process');
+                }
+            }
 
             $order->addStatusHistoryComment(
                 sprintf(
@@ -505,6 +582,10 @@ class Generator
             );
             $order->setIsNotified(false);
             $order->getResource()->save($order);
+            // Create invoice if the type is Payment And Capture
+            if($response->type == "paymentAndCapture" ){
+                $this->createInvoice($order);
+            }
         }
     }
 
