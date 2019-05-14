@@ -5,12 +5,12 @@
 ** Version 1.2.0
 
     * Improvements:
-            - Invoice automated generated when autocapture or ePayment is used
+            - Invoice automatically generated when autocapture or ePayment is used
             - Added section for order status when AutoCapture is on
     * Bug fix:
             - Notification flow broken
             - Wrong module version sent to the payment gateway
-                -- before installing this version please ran:
+                -- before installing this version please run:
                     ```sh
                         $ bin/magento module:uninstall SDM_Altapay -r
                     ```
