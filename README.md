@@ -2,6 +2,19 @@
 
 == Change log ==
 
+** Version 1.3.0
+
+    * Improvement:
+            - New database table according to the branding changes                  
+            - Several refactored files                     
+            - Database update for cleanup job after the rebraning changes
+            - Added a second batch of branding changes (renamed layout files and references)
+    * Bug Fixes
+            - Error not showing on browser back buton usage.
+            - Discounts not handled properly due to unitPrice and discount percentage
+            - PHP 7.2 limitation has been removed
+
+
 ** Version 1.2.0
 
     * Improvements:
@@ -14,6 +27,7 @@
                     ```sh
                         $ bin/magento module:uninstall SDM_Altapay -r
                     ```
+                    
                 
 ** Version 1.1.0
 
