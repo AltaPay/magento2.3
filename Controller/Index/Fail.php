@@ -44,7 +44,7 @@ class Fail extends Index implements CsrfAwareActionInterface
             $responseStatus = '';
             if (isset($post['error_message'])) {
                 $msg = $post['error_message'];
-                if($post['error_message'] != $post['error_message']){
+                if($post['error_message'] != $post['merchant_error_message']){
 				  $merchantErrorMsg = $post['merchant_error_message'];
 				}
                 $responseStatus = $post['status'];
@@ -59,7 +59,8 @@ class Fail extends Index implements CsrfAwareActionInterface
                     $msg = "Payment canceled";
                     $this->generator->handleCancelStatusAction($this->getRequest(),$responseStatus);
                     break;
-                case ('failed' || 'error'):
+                case "failed":
+                case "error":
                     $this->generator->handleFailedStatusAction($this->getRequest(), $msg, $merchantErrorMsg, $responseStatus);
                     break;
 

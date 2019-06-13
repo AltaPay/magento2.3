@@ -216,6 +216,7 @@ class Generator
             }
 
             $autoCaptureEnable =  $this->systemConfig->getTerminalConfig($terminalId, 'capture', $storeScope, $storeCode);
+
             if ($autoCaptureEnable) {
                 $request->setType('paymentAndCapture');
             }

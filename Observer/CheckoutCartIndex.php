@@ -102,7 +102,14 @@ class CheckoutCartIndex implements ObserverInterface
             if (strpos($errorCodeMerchant, 'failed') !== false || strpos($errorCodeMerchant, 'error') !== false
             || strpos($errorCodeMerchant, 'cancelled') !== false) {
 				  $consumerError = explode('|',$errorCodeMerchant);
-                  $message = $consumerError[1];
+                  $consmerErrorMessage = $consumerError[1];
+                  $merchantErrorMessage = $consumerError[2];
+                if($consmerErrorMessage == $merchantErrorMessage){
+                    $message = $consmerErrorMessage;
+                }
+                else{
+                    $message = $consmerErrorMessage." | ".$merchantErrorMessage;
+                }
                   $historyComment = $consumerError[1];
                   if($message == __(ConstantConfig::UNKNOWN_PAYMENT_STATUS_MERCHANT)){
                     $message = __(ConstantConfig::UNKNOWN_PAYMENT_STATUS_CONSUMER);
