@@ -2,6 +2,13 @@
 
 == Change log ==
 
+** Version 1.4.0
+
+    * Improvement:
+        - Added more details in the history comment for failed orders
+    * Note:
+        - Only discounts in percentage, two digits, are supported for payments made with Klarna
+
 ** Version 1.3.1
 
     * Bug Fixes
