@@ -279,7 +279,7 @@ class Generator
             try {
                 /** @var \Altapay\Response\PaymentRequestResponse $response */
                 $response = $request->call();
-                $requestParams['result'] = __(ConstantConfig::SUCCESS);
+                $requestParams['result'] = ConstantConfig::SUCCESS;
                 $requestParams['formurl'] = $response->Url;
                 // set before payment status
                 $orderStatusBefore = $this->systemConfig->getStatusConfig('before', $storeScope, $storeCode);
