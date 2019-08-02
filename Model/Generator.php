@@ -18,6 +18,7 @@ use Magento\Framework\App\RequestInterface;
 use Magento\Framework\Logger\Monolog;
 use Magento\Framework\UrlInterface;
 use Magento\Payment\Helper\Data as PaymentData;
+use Magento\Catalog\Helper\Data as Taxhelper;
 use Magento\Quote\Model\Quote;
 use Magento\Sales\Model\Order;
 use Magento\Sales\Model\Order\Email\Sender\OrderSender;
@@ -31,6 +32,8 @@ use Magento\Sales\Model\Order\Email\Sender\InvoiceSender;
 use Magento\Sales\Model\Order\Invoice;
 use Magento\Shipping\Model\ShipmentNotifier;
 use Magento\Framework\DB\TransactionFactory;
+use Magento\Catalog\Api\ProductRepositoryInterface;
+use Magento\Framework\App\Config\ScopeConfigInterface;
 use SDM\Altapay\Helper\Data;
 class Generator
 {    
@@ -40,44 +43,49 @@ class Generator
      */
     private $moduleList;
     /**
+     * @var ScopeConfigInterface
+     */
+    private $scopeConfig;
+    /**
      * @var Helper Data
      */
     private $helper;
     /**
+     * @var productRepository
+     */
+    protected $productRepository; 
+    /**
      * @var ProductMetadataInterface
      */
     private $productMetadata;
-
     /**
      * @var Quote
      */
     private $quote;
-
     /**
      * @var UrlInterface
      */
     private $urlInterface;
-
+    /**
+     * @var Taxhelper
+     */ 
+    private $taxHelper;
     /**
      * @var PaymentData
      */
     private $paymentData;
-
     /**
      * @var Session
      */
     private $checkoutSession;
-
     /**
      * @var Http
      */
     private $request;
-
     /**
      * @var Order
      */
     private $order;
-
     /**
      * @var OrderSender
      */
@@ -86,27 +94,22 @@ class Generator
      * @var InvoiceSender
      */
     private $invoiceSender;
-
     /**
      * @var SystemConfig
      */
     private $systemConfig;
-
     /**
      * @var Monolog
      */
     private $_logger;
-
      /**
      * @var \Magento\Sales\Model\Service\InvoiceService
      */
      private $_invoiceService;
-
     /**
      * @var \Magento\Framework\DB\Transaction
      */
     private $_transaction;
-
     /**
      * @var \Magento\Sales\Api\OrderRepositoryInterface
      */
@@ -140,6 +143,9 @@ class Generator
         OrderRepositoryInterface $orderRepository,
         ShipmentNotifier $shipmentNotifier,
         TransactionFactory $transactionFactory,
+        ProductRepositoryInterface $productRepository,
+        Taxhelper $taxHelper,
+        ScopeConfigInterface $scopeConfig,
         Data $helper
     ) {
         $this->quote = $quote;
@@ -159,6 +165,9 @@ class Generator
         $this->invoiceSender = $invoiceSender;
         $this->_shipmentNotifier = $shipmentNotifier;
         $this->transactionFactory = $transactionFactory;
+        $this->productRepository = $productRepository;
+        $this->taxHelper = $taxHelper;
+        $this->scopeConfig = $scopeConfig;
         $this->helper = $helper;
     }
 
@@ -175,8 +184,9 @@ class Generator
         if ($order->getId()) {
             $storeScope = \Magento\Store\Model\ScopeInterface::SCOPE_STORE;
             $storeCode = $order->getStore()->getCode();
-            $storeName = $order->getStore()->getName();
-            $websiteNAme = $order->getStore()->getWebsite()->getName();
+            $appliedRule = $order->getAppliedRuleIds();
+            $couponCode = $order->getDiscountDescription();
+            $couponCodeAmount = number_format($order->getDiscountAmount(), 2, '.', ''); 
             //Test the conn with the Payment Gateway
             $auth = $this->systemConfig->getAuth($storeCode);
             $api = new TestAuthentication($auth);
@@ -226,13 +236,25 @@ class Generator
             /** @var \Magento\Sales\Model\Order\Item $item */
             foreach ($order->getAllVisibleItems() as $item) {
                 $product_type = $item->getProductType();
-                $productOriginalPriceWithOrWithoutTax = $item->getBaseOriginalPrice();
-                $productSpecialPrice = $item->getPrice();
+                $productOriginalPrice = number_format($item->getBaseOriginalPrice(), 2, '.', '');
+                $taxPercent = $item->getTaxPercent();
+				$taxRate = (1 + $taxPercent/100);
+                $priceIncTax = false;
+                $quantity = $item->getQtyOrdered(); 
+                
+                if ((int) $this->scopeConfig->getValue('tax/calculation/price_includes_tax', $storeScope) === 1) {
+                    $unitPriceWithoutTax = $productOriginalPrice/$taxRate;
+                    $unitPrice = number_format($unitPriceWithoutTax, 2, '.', '');
+                    $priceIncTax = true;
+                }else{
+                    $unitPrice = $productOriginalPrice;
+                }
+                
                 $orderline = new OrderLine(
                     $item->getName(),
                     $item->getSku(),
                     $item->getQtyOrdered(),
-                    $productOriginalPriceWithOrWithoutTax
+                    $unitPrice
                 );
 
                 if($product_type != 'virtual' && $product_type != 'downloadable'){
@@ -240,40 +262,45 @@ class Generator
                 }
                 $orderline->setGoodsType('item');
                 //in case of cart rule discount, send tax after discount
-                $orderline->taxAmount = $item->getTaxAmount();
-                
-                if($productSpecialPrice != null && $productOriginalPriceWithOrWithoutTax > $productSpecialPrice && empty($order->getDiscountDescription())){
-                    $orderline->discount = (($productOriginalPriceWithOrWithoutTax-$productSpecialPrice)/$productOriginalPriceWithOrWithoutTax)*100;
-                    //In case of catalog rule discount, send tax before discount
-                    $taxBeforeDiscount = ($productOriginalPriceWithOrWithoutTax * $item->getTaxPercent())/100;
-                    $orderline->taxAmount = $taxBeforeDiscount * $item->getQtyOrdered();
+                if ($priceIncTax) {
+                    $dataForPriceIncTax = $this->returnDataForPriceIncTax($productOriginalPrice, $item, $unitPrice, $couponCode, $taxPercent, $quantity);
+                    $orderline->discount = $dataForPriceIncTax["discount"];
+                    $taxAmount = number_format($dataForPriceIncTax["rawTaxAmount"], 2, '.', '');
+                }else {
+                    $dataForPriceExcTax = $this->returnDataForPriceExcTax($item , $unitPrice, $couponCode, $quantity);
+                    $orderline->discount = $dataForPriceExcTax["discount"];
+                    $taxAmount = number_format($dataForPriceExcTax["rawTaxAmount"], 2, '.', '');
                 }
+                $orderline->taxAmount = $taxAmount + $item->getWeeeTaxAppliedRowAmount();
                 $orderlines[] = $orderline;
             }
-            if (abs($order->getDiscountAmount()) > 0) {
+            if ((abs($couponCodeAmount) > 0) || !(empty($appliedRules))) {
+                if(empty($couponCode)){
+                    $couponCode = 'Cart Price Rule';
+                }
                 // Handling price reductions
                 $orderline = new OrderLine(
-                    $order->getDiscountDescription(),
+                    $couponCode,
                     'discount',
                     1,
-                    $order->getDiscountAmount()
+                    $couponCodeAmount
                 );
                 $orderline->setGoodsType('handling');
                 $orderlines[] = $orderline;
             }
             if($sendShipment){
-             $shippingAddress = $order->getShippingMethod(true);
-             $method = isset($shippingAddress['method']) ? $shippingAddress['method'] : '';
-             $carrier_code = isset($shippingAddress['carrier_code']) ? $shippingAddress['carrier_code'] : '';
-             if(!empty($shippingAddress)){
-               $orderlines[] = (new OrderLine(
-                $method,
-                $carrier_code,
-                1,
-                $order->getShippingInclTax()
-            ))->setGoodsType('shipment');  
-           }
-       }     
+                $shippingAddress = $order->getShippingMethod(true);
+                $method = isset($shippingAddress['method']) ? $shippingAddress['method'] : '';
+                $carrier_code = isset($shippingAddress['carrier_code']) ? $shippingAddress['carrier_code'] : '';
+                if(!empty($shippingAddress)){
+                    $orderlines[] = (new OrderLine(
+                    $method,
+                    $carrier_code,
+                    1,
+                    $order->getShippingInclTax()
+                    ))->setGoodsType('shipment');  
+                }
+            }     
            $request->setOrderLines($orderlines);
  
             try {
@@ -324,7 +351,47 @@ class Generator
         $requestParams['message'] = __(ConstantConfig::ERROR_MESSAGE);
         return $requestParams;
     }
-
+	/**
+	 * @returns returnDataForPriceIncTax[]
+	 */
+    private function returnDataForPriceIncTax($productOriginalPrice, $item, $unitPrice, $couponCode, $taxPercent, $quantity)
+	{
+        $data["discount"] =	0;
+        $data["rawTaxAmount"] = 0;
+        $productID = $item->getProductId();
+        $_product = $this->productRepository->getById($productID);
+        $priceAfterDiscount = $_product->getPriceInfo()->getPrice('final_price')->getAmount()->getBaseAmount();
+        $priceAfterDiscount = number_format($priceAfterDiscount, 2, '.', '');
+        if(empty($couponCode)){
+            $data["rawTaxAmount"] = (($taxPercent/100) * $unitPrice) *  $quantity;
+        } else {
+            $data["rawTaxAmount"] = ($productOriginalPrice - $unitPrice) *  $quantity;
+        }
+        if ($priceAfterDiscount != null && $unitPrice > $priceAfterDiscount && empty($couponCode)) {
+            $data["discount"] = (($unitPrice-$priceAfterDiscount)/$unitPrice)*100;
+            $taxBeforeDiscount = ($unitPrice * $taxPercent)/100;
+            //In case of catalog rule discount, send tax before discount
+            $data["rawTaxAmount"] = $taxBeforeDiscount * $quantity;
+        }
+			return $data;
+    }
+    /**
+     * @returns returnDataForPriceExcTax[]
+     */
+	private function returnDataForPriceExcTax($item , $unitPrice, $couponCode, $quantity)
+	{
+        $data["discount"] =	0;
+        $data["rawTaxAmount"] = $item->getTaxAmount();
+        $productSpecialPrice = number_format($item->getPrice(), 2, '.', '');
+			if($productSpecialPrice != null && $unitPrice > $productSpecialPrice && empty($couponCode)){
+				$discount = (($unitPrice-$productSpecialPrice)/$unitPrice)*100;
+				//In case of catalog rule discount, send tax before discount
+				$taxBeforeDiscount = ($unitPrice * $item->getTaxPercent())/100;
+				$data["discount"] = $discount;
+				$data["rawTaxAmount"] = $taxBeforeDiscount * $quantity;
+			}
+			return $data;
+    }
     /**
      * @param $orderId
      * @throws \Exception
@@ -344,8 +411,8 @@ class Generator
         }
     }
 
-    public function createInvoice($order){
-
+    public function createInvoice($order)
+    {
          if (!$order->getInvoiceCollection()->count()) {
             $invoice = $this->_invoiceService->prepareInvoice($order);
             $invoice->setRequestedCaptureCase(\Magento\Sales\Model\Order\Invoice::CAPTURE_OFFLINE);
@@ -529,11 +596,17 @@ class Generator
                 $payment->setCcTransId($response->creditCardToken);
                 $payment->save();
             }
-
+            //If the product is shipping product then check
+            $shippedProduct = false;
             if (!$order->getEmailSent()) {
                 $this->orderSender->send($order);
             }
-           
+            foreach ($order->getAllVisibleItems() as $item) {
+                $product_type = $item->getProductType();
+            }
+            if ($product_type != 'virtual' && $product_type != 'downloadable') {
+                $shippedProduct = true;
+            }
             //unset redirect if success
             $this->checkoutSession->unsValitorCustomerRedirect();
 
@@ -555,23 +628,22 @@ class Generator
 
             if ($isCaptured) {
                 if($orderStatus_capture == "complete"){
-                    $this->setCustomOrderStatus($order, Order::STATE_COMPLETE, 'autocapture');
-                    $order->addStatusHistoryComment(__(ConstantConfig::PAYMENT_COMPLETE));  
-                }
-
-                else{
+                if ($shippedProduct) {
+                        $this->setCustomOrderStatus($order, Order::STATE_COMPLETE, 'autocapture');
+                        $order->addStatusHistoryComment(__(ConstantConfig::PAYMENT_COMPLETE));
+                    } else {
+                        $order->addStatusToHistory($orderStatus_capture, ConstantConfig::PAYMENT_COMPLETE, false);
+                    }
+                } else {
                     $this->setCustomOrderStatus($order, Order::STATE_PROCESSING, 'process');
                 }
-
-            }else{
-                if($orderStatusAfterPayment){
-                   $this->setCustomOrderStatus($order, $orderStatusAfterPayment, 'process');
-
-               } else {
+            } else {
+                if ($orderStatusAfterPayment) {
+                    $this->setCustomOrderStatus($order, $orderStatusAfterPayment, 'process');
+                } else {
                     $this->setCustomOrderStatus($order, Order::STATE_PROCESSING, 'process');
                 }
             }
-
             $order->addStatusHistoryComment(
                 sprintf(
                     "Transaction ID: %s - Payment ID: %s - Credit card token: %s",

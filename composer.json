@@ -13,7 +13,7 @@
     "php": "^5.5.0 | ^7.0.0",
     "lsv/altapay-php-api": "^1.0"
   },
-  "type": "magento2-module",
+  "type": "magento2-3-module",
   "autoload": {
     "files": [ "registration.php" ],
     "psr-4": {

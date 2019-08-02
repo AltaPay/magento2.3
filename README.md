@@ -2,6 +2,19 @@
 
 == Change log ==
 
+** Version 1.5.0
+
+    * Improvements:
+        - Added support for coupons
+        - Browser back button improvements
+        - Separate order line for cart rules sent the payment gateway
+        - Improvements on handling discounts on price including tax
+        - Changed private methods to protected to allow easier rewrites(credits to Martin René Sørensen, through pull request)
+    * Bug fixtures:
+        - Unit price not fetched correctly on price including taxes
+        - Order status history comment added when consumer gets redirected to the payment gateway
+
+
 ** Version 1.4.0
 
     * Improvement:
@@ -9,11 +22,12 @@
     * Note:
         - Only discounts in percentage, two digits, are supported for payments made with Klarna
 
+
 ** Version 1.3.1
 
     * Bug Fixes
-            - 302 errors due to the missing of CsrfValidator
-            - Klarna error message not shown to the consumer
+        - 302 errors due to the missing of CsrfValidator
+        - Klarna error message not shown to the consumer
             
 
 ** Version 1.3.0

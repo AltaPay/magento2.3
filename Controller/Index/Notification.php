@@ -81,7 +81,7 @@ class Notification extends Index implements CsrfAwareActionInterface
         return $resultRedirect;
     }
     
-     private function prepareRedirect($routePath, $routeParams = null, $message = '')
+    protected function prepareRedirect($routePath, $routeParams = null, $message = '')
     {
         if ($message != '') {
             $this->messageManager->addErrorMessage(__($message));
