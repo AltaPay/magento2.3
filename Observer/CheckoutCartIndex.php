@@ -96,16 +96,15 @@ class CheckoutCartIndex implements ObserverInterface
             $statusHistoryItem = $order->getStatusHistoryCollection()->getFirstItem();
             $errorCodeMerchant = $statusHistoryItem->getData('comment');
 
-            $message = __(ConstantConfig::BROWSER_BK_BUTTON_MSG);
             $historyComment = __(ConstantConfig::BROWSER_BK_BUTTON_COMMENT);
             $browserBackbtn = false;
             
             if (strpos($errorCodeMerchant, 'failed') !== false || strpos($errorCodeMerchant, 'error') !== false
             || strpos($errorCodeMerchant, 'cancelled') !== false) {
-				  $consumerError = explode('|',$errorCodeMerchant);
-                  $consumerErrorMessage = $consumerError[1];
-                  $merchantErrorMessage = $consumerError[2];
-                  //Displays merchant error message
+                $consumerError = explode('|',$errorCodeMerchant);
+                $consumerErrorMessage = $consumerError[1];
+                $merchantErrorMessage = $consumerError[2];
+                //Displays merchant error message
                 if($consumerErrorMessage == $merchantErrorMessage){
                     $historyComment = $consumerErrorMessage;
                 }
@@ -113,11 +112,13 @@ class CheckoutCartIndex implements ObserverInterface
                     $historyComment = $merchantErrorMessage." - ".$consumerErrorMessage;
                 }
                 //Displays consumer error messages
-                  $message = $consumerError[1];
-                  if($message == __(ConstantConfig::UNKNOWN_PAYMENT_STATUS_MERCHANT)){
+                $message = $consumerError[1];
+                if($message == __(ConstantConfig::UNKNOWN_PAYMENT_STATUS_MERCHANT)){
                     $message = __(ConstantConfig::UNKNOWN_PAYMENT_STATUS_CONSUMER);
                     $historyComment = __(ConstantConfig::UNKNOWN_PAYMENT_STATUS_CONSUMER);
-                  }
+                }
+                //show fail message
+                $this->messageManager->addErrorMessage($message);
             }else{
                 $browserBackbtn = true;
             }
@@ -132,7 +133,6 @@ class CheckoutCartIndex implements ObserverInterface
                 $quote->setIsActive(1)->setReservedOrderId(null)->save();
                 $this->session->replaceQuote($quote)->unsLastRealOrderId();
            
-
                 if ($order->getCouponCode()) {
                     $this->resetCouponAfterCancellation($order);
                 }
@@ -153,15 +153,16 @@ class CheckoutCartIndex implements ObserverInterface
 
                 if ($browserBackbtn == true) {
                   //set order status and comments
+                    $message = __(ConstantConfig::BROWSER_BK_BUTTON_MSG);
                     $order->addStatusHistoryComment($historyComment, $orderStatusCancelUpdate);
+                    $this->messageManager->addErrorMessage($message);
                 }
                 
 				$order->setState($orderStateCancelUpdate)->setStatus($orderStatusCancelUpdate);
                 $order->setIsNotified(false);
                 $order->getResource()->save($order);
             }
-            //show fail message
-            $this->messageManager->addErrorMessage($message);
+
             $this->session->unsValitorCustomerRedirect();
         }
     }

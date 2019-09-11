@@ -10,7 +10,9 @@ use Altapay\Api\Test\TestAuthentication;
 use Altapay\Api\Test\TestConnection;
 use SDM\Altapay\Model\SystemConfig;
 use Altapay\Authentication;
-
+use Magento\Framework\App\Config\ScopeConfigInterface;
+use Magento\Payment\Model\Config;
+use Magento\Payment\Model\Config\Source\Allmethods;
 /**
  * Class ConfigProvider
  * @package SDM\Altapay\Model
@@ -40,19 +42,39 @@ class ConfigProvider implements ConfigProviderInterface
     private $systemConfig;
 
     /**
+     * @var ScopeConfigInterface
+     */
+    protected $_appConfigScopeConfigInterface;
+    
+    /**
+     * @var Config
+     */
+    protected $_paymentModelConfig;
+    
+    /**
+     * @var allPaymentMethods
+     */
+    protected $allPaymentMethods;
+
+
+    /**
      * ConfigProvider constructor.
      * @param Data $data
      * @param Escaper $escaper
      * @param UrlInterface $urlInterface
      * @param ScopeConfigInterface $scopeConfig
      */
-    public function __construct(Data $data, Escaper $escaper, UrlInterface $urlInterface, SystemConfig $systemConfig
+    public function __construct(Data $data, Escaper $escaper,Allmethods $allPaymentMethods, UrlInterface $urlInterface, SystemConfig $systemConfig,
+    ScopeConfigInterface $appConfigScopeConfigInterface, Config $paymentModelConfig
     )
     {
+        $this->_appConfigScopeConfigInterface = $appConfigScopeConfigInterface;
+        $this->_paymentModelConfig = $paymentModelConfig;
         $this->data = $data;
         $this->escaper = $escaper;
         $this->urlInterface = $urlInterface;
         $this->systemConfig = $systemConfig;
+        $this->allPaymentMethods = $allPaymentMethods;
     }
 
     /**
@@ -63,17 +85,44 @@ class ConfigProvider implements ConfigProviderInterface
     public function getConfig()
     {
         $store = null;
+        $storeScope = \Magento\Store\Model\ScopeInterface::SCOPE_STORE;
+        $activePaymentMethod = $this->getActivePaymentMethod();
         return [
             'payment' => [
                 self::CODE => [
                     'url' => $this->urlInterface->getDirectUrl($this->getData()->getConfigData('place_order_url')),
                     'auth' => $this->checkAuth(),
-                    'connection' => $this->checkConn()
+                    'connection' => $this->checkConn(),
+                    'terminaldata' => $activePaymentMethod
                 ]
             ]
         ];
     }
 
+    public function getActivePaymentMethod(){
+        $storeScope = \Magento\Store\Model\ScopeInterface::SCOPE_STORE;
+        $storeCode = $this->systemConfig->resolveCurrentStoreCode();
+        $payments = $this->_paymentModelConfig->getActiveMethods();
+        $methods = array();
+        $allPaymentMethods = $this->data->getPaymentMethods();
+        foreach ($allPaymentMethods as $paymentCode => $paymentModel) {
+                $paymentTitle = $this->_appConfigScopeConfigInterface
+            ->getValue('payment/'.$paymentCode.'/title', $storeScope, $storeCode);
+                $selectedTerminal = $this->_appConfigScopeConfigInterface
+            ->getValue('payment/'.$paymentCode.'/terminalname', $storeScope, $storeCode);
+                $selectedTerminalStatus = $this->_appConfigScopeConfigInterface
+            ->getValue('payment/'.$paymentCode.'/active', $storeScope, $storeCode);
+            if($selectedTerminalStatus == 1){
+                $methods[$paymentCode] = array(
+                    'label' => $paymentTitle,
+                    'value' => $paymentCode,
+                    'terminalname' => $selectedTerminal,
+                    'terminalstatus' => $selectedTerminalStatus
+                );
+            }
+        }
+        return $methods;
+    }
     public function checkAuth()
     {
         $auth = 0;
@@ -113,3 +162,4 @@ class ConfigProvider implements ConfigProviderInterface
         return $this->data->getMethodInstance('terminal1');
     }
 }
+

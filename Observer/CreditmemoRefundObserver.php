@@ -48,7 +48,7 @@ class CreditmemoRefundObserver implements ObserverInterface
         $memo = $observer['creditmemo'];
         $orderlines = [];
         $creditOnline = $memo->getDoTransaction();
-
+        $compAmount = $memo->getShippingDiscountTaxCompensationAmount();
         if ($creditOnline) {
             /** @var \Magento\Sales\Model\Order $order */
             $order = $memo->getOrder();
@@ -75,7 +75,7 @@ class CreditmemoRefundObserver implements ObserverInterface
                         'Shipping',
                         'shipping',
                         1,
-                        $memo->getShippingInclTax()
+                        $memo->getShippingAmount() + $compAmount
                     );
                     $orderline->setGoodsType('shipment');
                     $orderline->taxAmount = $memo->getShippingTaxAmount();
@@ -83,7 +83,7 @@ class CreditmemoRefundObserver implements ObserverInterface
                 }
                 $refund = new RefundCapturedReservation($this->systemConfig->getAuth($order->getStore()->getCode()));
                 $refund->setTransaction($payment->getLastTransId());
-                $refund->setAmount((float) $memo->getGrandTotal());
+                $refund->setAmount((float) number_format($memo->getGrandTotal(), 2, '.', ''));
                 $refund->setOrderLines($orderlines);
                 /** @var RefundResponse $response */
                 try {

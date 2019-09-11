@@ -190,7 +190,6 @@ class Generator
             //Test the conn with the Payment Gateway
             $auth = $this->systemConfig->getAuth($storeCode);
             $api = new TestAuthentication($auth);
-
             $response = $api->call();
             if (! $response) {
                 $this->restoreOrderFromOrderId($order->getIncrementId());
@@ -206,7 +205,8 @@ class Generator
             $request
                 ->setTerminal($terminalName)
                 ->setShopOrderId($order->getIncrementId())
-                ->setAmount((float) $order->getGrandTotal())
+                //Grand total formated to avoid the 3 digits error in total
+                ->setAmount((float) number_format($order->getGrandTotal(), 2, '.', '')) 
                 ->setCurrency($order->getOrderCurrencyCode())
                 ->setCustomerInfo($this->setCustomer($order))
                 ->setConfig($this->setConfig())
@@ -233,6 +233,11 @@ class Generator
 
             $orderlines = [];
             $sendShipment = false;
+            //get shipping information
+            $compAmount = $order->getShippingDiscountTaxCompensationAmount();
+            $shippingTax = $order->getShippingTaxAmount();
+            $totalShipAmount = $order-> getShippingAmount();
+
             /** @var \Magento\Sales\Model\Order\Item $item */
             foreach ($order->getAllVisibleItems() as $item) {
                 $product_type = $item->getProductType();
@@ -263,7 +268,7 @@ class Generator
                 $orderline->setGoodsType('item');
                 //in case of cart rule discount, send tax after discount
                 if ($priceIncTax) {
-                    $dataForPriceIncTax = $this->returnDataForPriceIncTax($productOriginalPrice, $item, $unitPrice, $couponCode, $taxPercent, $quantity);
+                    $dataForPriceIncTax = $this->returnDataForPriceIncTax($product_type, $productOriginalPrice, $item, $unitPrice, $couponCode, $taxPercent, $quantity);
                     $orderline->discount = $dataForPriceIncTax["discount"];
                     $taxAmount = number_format($dataForPriceIncTax["rawTaxAmount"], 2, '.', '');
                 }else {
@@ -293,12 +298,16 @@ class Generator
                 $method = isset($shippingAddress['method']) ? $shippingAddress['method'] : '';
                 $carrier_code = isset($shippingAddress['carrier_code']) ? $shippingAddress['carrier_code'] : '';
                 if(!empty($shippingAddress)){
-                    $orderlines[] = (new OrderLine(
-                    $method,
-                    $carrier_code,
-                    1,
-                    $order->getShippingInclTax()
-                    ))->setGoodsType('shipment');  
+                    $orderline = new OrderLine(
+                        $method,
+                        $carrier_code,
+                        1,
+                        $totalShipAmount + $compAmount //shipping amount without tax
+                    );
+                    //add shipping tax amount in separate column of request
+                    $orderline->taxAmount = $shippingTax;
+                    $orderline->setGoodsType('shipment');
+                    $orderlines[] = $orderline; 
                 }
             }     
            $request->setOrderLines($orderlines);
@@ -351,29 +360,38 @@ class Generator
         $requestParams['message'] = __(ConstantConfig::ERROR_MESSAGE);
         return $requestParams;
     }
-	/**
-	 * @returns returnDataForPriceIncTax[]
-	 */
-    private function returnDataForPriceIncTax($productOriginalPrice, $item, $unitPrice, $couponCode, $taxPercent, $quantity)
-	{
+    /**
+    * @returns returnDataForPriceIncTax[]
+    */
+    private function returnDataForPriceIncTax($product_type, $productOriginalPrice, $item, $unitPrice, $couponCode, $taxPercent, $quantity)
+    {
         $data["discount"] =	0;
         $data["rawTaxAmount"] = 0;
+        $priceAfterDiscount = 0;
         $productID = $item->getProductId();
-        $_product = $this->productRepository->getById($productID);
-        $priceAfterDiscount = $_product->getPriceInfo()->getPrice('final_price')->getAmount()->getBaseAmount();
+        $_product = $this->productRepository->getById($productID); 
+        
+        //If product type is configurable get price after discount
+        if($product_type == "configurable") {
+            $priceAfterDiscount = $item->getRowTotal()/$quantity;
+        }else {
+            $priceAfterDiscount = $_product->getPriceInfo()->getPrice('final_price')->getAmount()->getBaseAmount();
+        }    
         $priceAfterDiscount = number_format($priceAfterDiscount, 2, '.', '');
+        
         if(empty($couponCode)){
             $data["rawTaxAmount"] = (($taxPercent/100) * $unitPrice) *  $quantity;
-        } else {
+        }else {
             $data["rawTaxAmount"] = ($productOriginalPrice - $unitPrice) *  $quantity;
         }
         if ($priceAfterDiscount != null && $unitPrice > $priceAfterDiscount && empty($couponCode)) {
-            $data["discount"] = (($unitPrice-$priceAfterDiscount)/$unitPrice)*100;
+            $discountAmount = (($unitPrice-$priceAfterDiscount)/$unitPrice)*100;
+            $data["discount"] = number_format($discountAmount, 2, '.', '');
             $taxBeforeDiscount = ($unitPrice * $taxPercent)/100;
             //In case of catalog rule discount, send tax before discount
             $data["rawTaxAmount"] = $taxBeforeDiscount * $quantity;
         }
-			return $data;
+        return $data;
     }
     /**
      * @returns returnDataForPriceExcTax[]
@@ -715,10 +733,10 @@ class Generator
     }
 
     /**
-     * @param Order $order
-     * @return Customer
-     */
-   private function setCustomer(Order $order)
+    * @param Order $order
+    * @return Customer
+    */
+    private function setCustomer(Order $order)
     {
         $billingAddress = new Address();
         if ($order->getBillingAddress()) {
@@ -733,38 +751,39 @@ class Generator
             $billingAddress->Country = $address['country_id'];
         }
         $customer = new Customer($billingAddress);
-
+        
         if ($order->getShippingAddress()) {
-         $address = $order->getShippingAddress()->convertToArray();
-         $shippingAddress = new Address();
-         $shippingAddress->Email = $order->getShippingAddress()->getEmail();
-         $shippingAddress->Firstname = $address['firstname'];
-         $shippingAddress->Lastname = $address['lastname'];
-         $shippingAddress->Address = $address['street'];
-         $shippingAddress->City = $address['city'];
-         $shippingAddress->PostalCode = $address['postcode'];
-         $shippingAddress->Region = $address['region'] ?: '0';
-         $shippingAddress->Country = $address['country_id'];
-         $customer->setShipping($shippingAddress);
-     }
-     else{
-        $customer->setShipping($billingAddress);
+            $address = $order->getShippingAddress()->convertToArray();
+            $shippingAddress = new Address();
+            $shippingAddress->Email = $order->getShippingAddress()->getEmail();
+            $shippingAddress->Firstname = $address['firstname'];
+            $shippingAddress->Lastname = $address['lastname'];
+            $shippingAddress->Address = $address['street'];
+            $shippingAddress->City = $address['city'];
+            $shippingAddress->PostalCode = $address['postcode'];
+            $shippingAddress->Region = $address['region'] ?: '0';
+            $shippingAddress->Country = $address['country_id'];
+            $customer->setShipping($shippingAddress);
+        }
+        else{
+            $customer->setShipping($billingAddress);
+        }
+        
+        if ($order->getBillingAddress()) {
+            $customer->setEmail($order->getBillingAddress()->getEmail());
+            $customer->setPhone($order->getBillingAddress()->getTelephone());
+        } elseif ($order->getShippingAddress()) {
+            $customer->setEmail($order->getShippingAddress()->getEmail());
+            $customer->setPhone($order->getShippingAddress()->getTelephone());
+        }
+        else {
+            $customer->setEmail($order->getBillingAddress()->getEmail());
+            $customer->setPhone($order->getBillingAddress()->getTelephone());
+        } 
+        
+        return $customer;
     }
-
-    if ($order->getBillingAddress()) {
-        $customer->setEmail($order->getBillingAddress()->getEmail());
-        $customer->setPhone($order->getBillingAddress()->getTelephone());
-    } elseif ($order->getShippingAddress()) {
-        $customer->setEmail($order->getShippingAddress()->getEmail());
-        $customer->setPhone($order->getShippingAddress()->getTelephone());
-    }
-    else {
-        $customer->setEmail($order->getBillingAddress()->getEmail());
-        $customer->setPhone($order->getBillingAddress()->getTelephone());
-    } 
-
-    return $customer;
-}
+    
     public function getCheckoutSession()
     {
         return $this->checkoutSession;
