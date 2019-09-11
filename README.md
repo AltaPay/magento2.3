@@ -2,6 +2,21 @@
 
 == Change log ==
 
+** Version 1.6.0
+
+    * Improvements:
+            - List of supported languages is dynamically fetched; only supported by the payment gateway are available
+            - Terminal dropdown list with default option
+            - Added support discounts applied to shipping
+            - Handle correctly virtual and downloadable products at checkout completion
+    * Bug fixes:
+            - Payment method not always shown correctly, according to the store configuration
+            - Multiple issues on shipping orderline
+            - Terminal enabled based on Default instead of Store configuration level
+            - Capture and refund failing on certain cases
+            - Amounts having more than two digits not handled correctly
+            - Error message related to the back button shown when successful payment
+
 ** Version 1.5.0
 
     * Improvements:
