@@ -2,6 +2,12 @@
 
 == Change log ==
 
+** Version 1.7.0
+
+    * Improvement:
+            - Added support for configurable products
+            
+
 ** Version 1.6.0
 
     * Improvements:

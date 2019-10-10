@@ -81,41 +81,27 @@ class CaptureObserver implements ObserverInterface
             $orderlines = [];
             $appliedRules = $invoice->getAppliedRuleIds();
             $couponCode = $invoice->getDiscountDescription();
-            $couponCodeAmount = $invoice->getDiscountAmount();
+            $couponCodeAmount = number_format($invoice->getDiscountAmount(), 2, '.', '');
             $compAmount = $invoice->getShippingDiscountTaxCompensationAmount();
+            $totalProdCom = number_format($invoice->getDiscountTaxCompensationAmount(), 2, '.', ''); 
+           //get product info            
             /** @var \Magento\Sales\Model\Order\Invoice\Item $item */
             foreach ($invoice->getItems() as $item) {
-                $id = $item->getProductId();
-                $productOriginalPrice = $this->getProductPrice($id);
-                $priceExcTax = $item->getPrice();
+
                 $quantity = $item->getQty();
-                if ((int) $this->scopeConfig->getValue('tax/calculation/price_includes_tax', $storeScope) === 1) {
-                    //Handle only if we have coupon Code
-                    if(empty($couponCode)){
-                        $taxPercent = $item->getOrderItem()->getTaxPercent();
-                        $taxCalculatedAmount = $priceExcTax *  ($taxPercent/100);
-                        $taxAmount = (number_format($taxCalculatedAmount, 2, '.', '') * $quantity);
-                    } else{
-                        $taxAmount = ($productOriginalPrice - $priceExcTax) * $quantity;
-                    }
-                }else{
-                    $taxAmount = $item->getTaxAmount();
-                }
-                if ($item->getPriceInclTax()) {
-                    $taxPercent = $item->getTaxPercent();
-                    $this->logItem($item);
-                    $orderline = new OrderLine(
-                        $item->getName(),
-                        $item->getSku(),
-                        $quantity,
-                        $item->getPrice()
-                    );
-                    $orderline->setGoodsType('item');
-                    $orderline->taxAmount = $taxAmount;
-                    $orderlines[] = $orderline;
-                }
-            }
-            
+                //new order line
+                $orderline = new OrderLine(
+                    $item->getName(),
+                    $item->getSku(),
+                    $quantity,
+                    $item->getBasePrice()
+                );
+                $orderline->setGoodsType('item');
+                $orderline->taxAmount = $item->getTaxAmount();
+                $orderlines[] = $orderline;
+
+
+            }            
             if ((abs($couponCodeAmount) > 0) || !(empty($appliedRules))) {
                 if(empty($couponCode)){
                     $couponCode = 'Cart Price Rule';
@@ -125,7 +111,7 @@ class CaptureObserver implements ObserverInterface
                     $couponCode,
                     'discount',
                     1,
-                    $couponCodeAmount
+                    $couponCodeAmount + $totalProdCom
                 );
                 $orderline->setGoodsType('handling');
                 $orderlines[] = $orderline;
