@@ -36,10 +36,14 @@ define(
                 };
             }
 
-             if (agreementsConfig.isEnabled) {
-                if(jQuery(".payment-method._active .checkout-agreements input[type='checkbox']:checked").length == 0){
+            if (Object.prototype.hasOwnProperty.call(paymentData, '__disableTmpl')) {
+                delete paymentData.__disableTmpl;
+            }
+
+            if (agreementsConfig.isEnabled) {
+                if (jQuery(".payment-method._active .checkout-agreements input[type='checkbox']:checked").length == 0) {
                     paymentData.extension_attributes = {agreement_ids: [""]};
-                }else{
+                } else {
                     paymentData.extension_attributes = {agreement_ids: ["1"]};
                 }
             }
@@ -64,7 +68,7 @@ define(
                                 window.location.href = jsonResponse.formurl;
                             } else {
                                 fullScreenLoader.stopLoader();
-                                $(".payment-method._active").find('#valitor-error-message').css('display','block');
+                                $(".payment-method._active").find('#valitor-error-message').css('display', 'block');
                                 $(".payment-method._active").find('#valitor-error-message').text(jsonResponse.message);
                                 return false;
                             }
@@ -76,6 +80,6 @@ define(
                 });
 
         };
-        
+
     }
 );

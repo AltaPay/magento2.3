@@ -1,8 +1,8 @@
 <?php
-namespace SDM\Altapay\Controller\Index;
+namespace SDM\Valitor\Controller\Index;
 
 use Magento\Framework\App\ResponseInterface;
-use SDM\Altapay\Controller\Index;
+use SDM\Valitor\Controller\Index;
 use Magento\Framework\App\CsrfAwareActionInterface;
 use Magento\Framework\App\RequestInterface;
 use Magento\Framework\App\Request\InvalidRequestException;

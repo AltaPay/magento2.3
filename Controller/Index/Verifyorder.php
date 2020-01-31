@@ -1,8 +1,9 @@
 <?php
-namespace SDM\Altapay\Controller\Index;
+
+namespace SDM\Valitor\Controller\Index;
 
 use Magento\Framework\App\ResponseInterface;
-use SDM\Altapay\Controller\Index;
+use SDM\Valitor\Controller\Index;
 use Magento\Framework\App\CsrfAwareActionInterface;
 use Magento\Framework\App\Request\InvalidRequestException;
 use Magento\Framework\App\RequestInterface;
@@ -19,27 +20,26 @@ class Verifyorder extends Index implements CsrfAwareActionInterface
 
     /**
      * @inheritDoc
-    */
+     */
     public function createCsrfValidationException(
         RequestInterface $request
     ): ?InvalidRequestException {
         return null;
     }
 
-    /** 
+    /**
      * @inheritDoc
      */
     public function validateForCsrf(RequestInterface $request): ?bool
     {
         return true;
     }
-    
+
     public function execute()
     {
         $this->writeLog();
-        // @todo verify order
+        // @TODO: verify order
         echo 'OKAY';
         exit;
     }
-
 }

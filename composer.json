@@ -11,13 +11,13 @@
   "description": "Valitor-Omni: we make buying and selling easy",
   "require": {
     "php": "^5.5.0 | ^7.0.0",
-    "lsv/altapay-php-api": "^1.0"
+    "lsv/altapay-php-api": "^2.0"
   },
-  "type": "magento2-3-module",
+  "type": "magento2-module",
   "autoload": {
     "files": [ "registration.php" ],
     "psr-4": {
-      "SDM\\Altapay\\": ""
+      "SDM\\Valitor\\": ""
     }
   }
 }

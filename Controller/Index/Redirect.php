@@ -1,11 +1,11 @@
 <?php
-namespace SDM\Altapay\Controller\Index;
+namespace SDM\Valitor\Controller\Index;
 
 use Magento\Framework\App\ResponseInterface;
 use Magento\Framework\App\CsrfAwareActionInterface;
 use Magento\Framework\App\Request\InvalidRequestException;
 use Magento\Framework\App\RequestInterface;
-use SDM\Altapay\Controller\Index;
+use SDM\Valitor\Controller\Index;
 
 class Redirect extends Index implements CsrfAwareActionInterface
 {

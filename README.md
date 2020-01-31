@@ -2,6 +2,18 @@
 
 == Change log ==
 
+** Version 1.9.0
+
+    * Improvements:
+            - Added a fix in relation to a bug in Magento core source code
+            - Completed the rebranding changes
+            - Revamped orderlines for capture and refund calls
+            - Added support for bundle product and multiple tax rules
+    * Bug fixtures:
+            - Failed order when coupon code applied only to shipping
+            - Duplicated confirmation email sent when e-payments
+            - Rounding mismatch issue in compensation amounts
+
 ** Version 1.8.0
 
     * Improvements: 

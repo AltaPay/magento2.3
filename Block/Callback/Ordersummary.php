@@ -1,6 +1,6 @@
 <?php
 
-namespace SDM\Altapay\Block\Callback;
+namespace SDM\Valitor\Block\Callback;
 
 use Magento\Customer\Model\Context;
 use Magento\Sales\Model\Order;
@@ -168,7 +168,8 @@ class Ordersummary extends \Magento\Framework\View\Element\Template
      * @param int $id Product id
      * @return $this
      */
-    public function getProductById($id) {
+    public function getProductById($id)
+    {
         return $this->productRepository->getById($id);
     }
 

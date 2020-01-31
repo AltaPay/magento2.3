@@ -1,8 +1,9 @@
 <?php
-namespace SDM\Altapay\Controller\Index;
+
+namespace SDM\Valitor\Controller\Index;
 
 use Magento\Framework\App\ResponseInterface;
-use SDM\Altapay\Controller\Index;
+use SDM\Valitor\Controller\Index;
 use Magento\Framework\App\CsrfAwareActionInterface;
 use Magento\Framework\App\RequestInterface;
 use Magento\Framework\App\Request\InvalidRequestException;
@@ -11,7 +12,7 @@ class Notification extends Index implements CsrfAwareActionInterface
 {
     /**
      * @inheritDoc
-    */
+     */
     public function createCsrfValidationException(
         RequestInterface $request
     ): ?InvalidRequestException {
@@ -21,76 +22,73 @@ class Notification extends Index implements CsrfAwareActionInterface
     /**
      * @inheritDoc
      */
-    public function validateForCsrf(RequestInterface $request): ? bool
+    public function validateForCsrf(RequestInterface $request): ?bool
     {
         return true;
     }
-    
-       /**
+
+    /**
      * Dispatch request
      *
-     * @return \Magento\Framework\Controller\ResultInterface|ResponseInterface
+     * @return string
      * @throws \Magento\Framework\Exception\NotFoundException
      */
-     public function execute()
+    public function execute()
     {
-		 $this->writeLog();
-		 try {
-			if ($this->checkPost()) {
-            $post = $this->getRequest()->getParams();
-            //Set order status, if available from the payment gateway
-            $merchantErrorMsg = '';
-            $responseStatus = strtolower($post['status']);
-            if (isset($post['error_message'])) {
-                $msg = $post['error_message'];
-                if($post['error_message'] != $post['error_message']){
-				  $merchantErrorMsg = $post['merchant_error_message'];
-				}
-            } else {
-                $msg = 'No error message found';
+        $this->writeLog();
+        $responseStatus = '';
+        $resultRedirect = '';
+        $msg            = '';
+
+        try {
+            if ($this->checkPost()) {
+                $post = $this->getRequest()->getParams();
+                //Set order status, if available from the payment gateway
+                $merchantErrorMsg = '';
+                $responseStatus   = strtolower($post['status']);
+                if (isset($post['error_message'])) {
+                    $msg = $post['error_message'];
+                    if ($post['error_message'] != $post['merchant_error_message']) {
+                        $merchantErrorMsg = $post['merchant_error_message'];
+                    }
+                }
+
+                switch ($responseStatus) {
+                    case "cancelled":
+                        $msg = "Payment canceled";
+                        $this->generator->handleCancelStatusAction($this->getRequest(), $responseStatus);
+                        break;
+                    case "failed":
+                    case "error":
+                        $this->generator->handleFailedStatusAction($this->getRequest(), $msg, $merchantErrorMsg, $responseStatus);
+                        break;
+                    case "success":
+                    case "succeeded":
+                        $this->generator->handleNotificationAction($this->getRequest());
+                        break;
+                    default:
+                        $this->generator->handleCancelStatusAction($this->getRequest(), $responseStatus);
+                }
             }
-            switch (strtolower($post['status'])) {
-                case "cancelled":
-                    $msg = "Payment canceled";
-                    $this->generator->handleCancelStatusAction($this->getRequest(),$responseStatus);
-                    break;
-
-                case "failed":
-                case "error":
-                    $this->generator->handleFailedStatusAction($this->getRequest(), $msg, $merchantErrorMsg, $responseStatus);
-                    break;
-
-                case "success":
-                case "succeeded":
-                    $this->generator->handleNotificationAction($this->getRequest());
-                    break;
-
-                default:
-                    $this->generator->handleCancelStatusAction($this->getRequest(),$responseStatus);
-            }
-          } 
         } catch (\Exception $e) {
             $msg = $e->getMessage();
         }
 
-        $orderStatus = strtolower($post['status']);
-        if ($orderStatus != 'success' || $orderStatus != 'succeeded') {
+        if ($responseStatus != 'success' || $responseStatus != 'succeeded') {
             $resultRedirect = $this->prepareRedirect('checkout/cart', array(), $msg);
         }
 
         return $resultRedirect;
     }
-    
+
     protected function prepareRedirect($routePath, $routeParams = null, $message = '')
     {
         if ($message != '') {
             $this->messageManager->addErrorMessage(__($message));
         }
         $resultRedirect = $this->resultRedirectFactory->create();
-        $customerRedirUrl = $this->_url->getUrl($routePath, $routeParams);
-        $resultRedirect->setPath($customerRedirUrl);
+        $resultRedirect->setPath($this->_url->getUrl($routePath, $routeParams));
 
         return $resultRedirect;
     }
-
 }
