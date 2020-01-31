@@ -23,7 +23,7 @@
             - Added support for:
                 - catalog discounts in relation to the latest updates on orderlines 
                 - applied discount on virtual products
-    * Bug fixes:
+    * Bug fixtures:
             - Partial captures failing on certain cases when Klarna used as payment method
             - Exception thrown on certain cases when refunds are made 
 
@@ -41,7 +41,7 @@
             - Terminal dropdown list with default option
             - Added support discounts applied to shipping
             - Handle correctly virtual and downloadable products at checkout completion
-    * Bug fixes:
+    * Bug fixtures:
             - Payment method not always shown correctly, according to the store configuration
             - Multiple issues on shipping orderline
             - Terminal enabled based on Default instead of Store configuration level
@@ -72,7 +72,7 @@
 
 ** Version 1.3.1
 
-    * Bug Fixes
+    * Bug fixtures
         - 302 errors due to the missing of CsrfValidator
         - Klarna error message not shown to the consumer
             
@@ -84,7 +84,7 @@
         - Several refactored files                     
         - Database update for cleanup job after the rebraning changes
         - Added a second batch of branding changes (renamed layout files and references)
-    * Bug Fixes
+    * Bug fixtures
         - Error not showing on browser back buton usage.
         - Discounts not handled properly due to unitPrice and discount percentage
         - PHP 7.2 limitation has been removed
@@ -95,7 +95,7 @@
     * Improvements:
         - Invoice automatically generated when autocapture or ePayment is used
         - Added section for order status when AutoCapture is on
-    * Bug fix:
+    * Bug fixtures:
         - Notification flow broken
         - Wrong module version sent to the payment gateway
             -- before installing this version please run:
@@ -111,7 +111,7 @@
         ** Platform and plugin versioning information sent to the payment gateway
         ** Added support for virtual products
 	
-    * Bug fix:
+    * Bug fixtures:
         ** Validation Error not been shown at back button from checkout page
         ** Order Status stall in "Pending"
         ** Payment capture often fails
