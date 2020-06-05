@@ -25,7 +25,7 @@
             - Completed the rebranding changes
             - Revamped orderlines for capture and refund calls
             - Added support for bundle product and multiple tax rules
-    * Bug fixtures:
+    * Bug fixes:
             - Failed order when coupon code applied only to shipping
             - Duplicated confirmation email sent when e-payments
             - Rounding mismatch issue in compensation amounts
@@ -39,7 +39,7 @@
             - Added support for:
                 - catalog discounts in relation to the latest updates on orderlines 
                 - applied discount on virtual products
-    * Bug fixtures:
+    * Bug fixes:
             - Partial captures failing on certain cases when Klarna used as payment method
             - Exception thrown on certain cases when refunds are made 
 
@@ -57,7 +57,7 @@
             - Terminal dropdown list with default option
             - Added support discounts applied to shipping
             - Handle correctly virtual and downloadable products at checkout completion
-    * Bug fixtures:
+    * Bug fixes:
             - Payment method not always shown correctly, according to the store configuration
             - Multiple issues on shipping orderline
             - Terminal enabled based on Default instead of Store configuration level
@@ -73,7 +73,7 @@
         - Separate order line for cart rules sent the payment gateway
         - Improvements on handling discounts on price including tax
         - Changed private methods to protected to allow easier rewrites(credits to Martin René Sørensen, through pull request)
-    * Bug fixtures:
+    * Bug fixes:
         - Unit price not fetched correctly on price including taxes
         - Order status history comment added when consumer gets redirected to the payment gateway
 
@@ -88,7 +88,7 @@
 
 ** Version 1.3.1
 
-    * Bug fixtures
+    * Bug fixes:
         - 302 errors due to the missing of CsrfValidator
         - Klarna error message not shown to the consumer
             
@@ -100,7 +100,7 @@
         - Several refactored files                     
         - Database update for cleanup job after the rebraning changes
         - Added a second batch of branding changes (renamed layout files and references)
-    * Bug fixtures
+    * Bug fixes:
         - Error not showing on browser back buton usage.
         - Discounts not handled properly due to unitPrice and discount percentage
         - PHP 7.2 limitation has been removed
@@ -111,7 +111,7 @@
     * Improvements:
         - Invoice automatically generated when autocapture or ePayment is used
         - Added section for order status when AutoCapture is on
-    * Bug fixtures:
+    * Bug fixes:
         - Notification flow broken
         - Wrong module version sent to the payment gateway
             -- before installing this version please run:
@@ -127,7 +127,7 @@
         ** Platform and plugin versioning information sent to the payment gateway
         ** Added support for virtual products
 	
-    * Bug fixtures:
+    * Bug fixes:
         ** Validation Error not been shown at back button from checkout page
         ** Order Status stall in "Pending"
         ** Payment capture often fails
