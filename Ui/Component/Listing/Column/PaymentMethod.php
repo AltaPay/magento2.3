@@ -1,4 +1,11 @@
 <?php
+/**
+ * Valitor Module for Magento 2.x.
+ *
+ * Copyright © 2020 Valitor. All rights reserved.
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
 
 namespace SDM\Valitor\Ui\Component\Listing\Column;
 
@@ -47,7 +54,7 @@ class PaymentMethod extends Column
                 $storeId = $order->getStore()->getId();
                 $payment = $order->getPayment();
                 $method = $payment->getMethodInstance();
-                $title = $method->getConfigData('title', $storeId);;
+                $title      = $method->getConfigData('title', $storeId);
                 $terminalID = $payment->getMethod();
                     if($title == null){
                         $terminalTitle = $this->_appConfigScopeConfigInterface

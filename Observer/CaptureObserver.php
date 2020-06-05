@@ -1,4 +1,11 @@
 <?php
+/**
+ * Valitor Module for Magento 2.x.
+ *
+ * Copyright © 2020 Valitor. All rights reserved.
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
 
 namespace SDM\Valitor\Observer;
 
@@ -93,8 +100,7 @@ class CaptureObserver implements ObserverInterface
         $invoice          = $observer['invoice'];
         $orderIncrementId = $invoice->getOrder()->getIncrementId();
         $orderObject      = $this->order->loadByIncrementId($orderIncrementId);
-        $storeScope       = \Magento\Store\Model\ScopeInterface::SCOPE_STORE;
-        $storePriceIncTax = $this->storePriceIncTax($storeScope);
+        $storePriceIncTax = $this->storePriceIncTax($invoice->getOrder());
         $couponCode       = $invoice->getOrder()->getDiscountDescription();
         $storeCode        = $invoice->getStore()->getCode();
         if (in_array($payment->getMethod(), SystemConfig::getTerminalCodes())) {
@@ -104,19 +110,6 @@ class CaptureObserver implements ObserverInterface
             $couponCodeAmount   = $invoice->getDiscountAmount();
             $compAmount         = $invoice->getOrder()->getShippingDiscountTaxCompensationAmount();
             $discountOnAllItems = $this->allItemsHaveDiscount($invoice->getOrder()->getAllVisibleItems());
-            $shippingDiscounts  = array();
-            if (!empty($appliedRule)) {
-                $appliedRuleArr = explode(",", $appliedRule);
-                foreach ($appliedRuleArr as $ruleId) {
-                    $couponCodeData  = $this->rule->create()->load($ruleId);
-                    $applyToShipping = $couponCodeData->getData('apply_to_shipping');
-                    if ($applyToShipping) {
-                        if (!in_array($ruleId, $shippingDiscounts)) {
-                            $shippingDiscounts[] = $ruleId;
-                        }
-                    }
-                }
-            }
 
             /** @var \Magento\Sales\Model\Order\Invoice\Item $item */
             foreach ($invoice->getAllItems() as $item) {
@@ -138,17 +131,18 @@ class CaptureObserver implements ObserverInterface
                     $discountAmount       = $item->getDiscountAmount();
                     $originalPrice        = $item->getOrderItem()->getOriginalPrice();
                     $itemDiscount         = 0;
-                    $unitPriceWithoutTax  = $originalPrice / $taxRate;
                     $catalogDiscountCheck = false;
-
                     if (!empty($discountAmount)) {
                         $itemDiscount = ($discountAmount * 100) / ($originalPrice * $quantity);
                     }
-
+                    if ($originalPrice == 0) {
+                        $originalPrice = $item->getPriceInclTax();
+                    }
                     if ($storePriceIncTax) {
-                        $unitPrice = bcdiv($unitPriceWithoutTax, 1, 2);
-                        $taxAmount = ($unitPriceWithoutTax * ($taxPercent / 100)) * $quantity;
-                        $taxAmount = number_format($taxAmount, 2, '.', '');
+                        $unitPriceWithoutTax = $originalPrice / $taxRate;
+                        $unitPrice           = bcdiv($unitPriceWithoutTax, 1, 2);
+                        $taxAmount           = ($unitPriceWithoutTax * ($taxPercent / 100)) * $quantity;
+                        $taxAmount           = number_format($taxAmount, 2, '.', '');
 
                         if ($originalPrice > 0 && $originalPrice > $priceInclTax && empty($discountAmount)) {
                             $catalogDiscountCheck = true;
@@ -201,16 +195,30 @@ class CaptureObserver implements ObserverInterface
                             $catalogDiscountCheck
                         );
                         $orderline->taxAmount       = $taxAmount;
-                        $orderlines[]               = $orderline;
+                        $orderline->taxPercent      = $taxPercent;
+                        $orderline->productUrl      = $item->getOrderItem()->getProduct()->getProductUrl();
+                        $productThumb               = $item->getOrderItem()->getProduct()->getThumbnail();
+                        if (!empty($productThumb) && $productThumb !== 'no_selection') {
+                            $orderline->imageUrl = $this->getProductImageUrl($invoice->getOrder(), $productThumb);
+                        }
+                        if ($quantity > 1) {
+                            $orderline->unitCode = "units";
+                        } else {
+                            $orderline->unitCode = "unit";
+                        }
+                        $orderlines[] = $orderline;
                         if ($roundingCompensationAmount > 0 || $roundingCompensationAmount < 0) {
-                            $orderline            = new OrderLine(
+                            $orderline             = new OrderLine(
                                 "Compensation Amount",
-                                "comp",
+                                "comp-" . $item->getOrderItem()->getItemId(),
                                 1,
                                 $roundingCompensationAmount
                             );
-                            $orderline->taxAmount = 0.00;
-                            $orderlines[]         = $orderline;
+                            $orderline->taxAmount  = 0;
+                            $orderline->taxPercent = 0;
+                            $orderline->unitCode   = "unit";
+                            $orderline->discount   = 0;
+                            $orderlines[]          = $orderline;
                         }
                     }
                 }
@@ -240,57 +248,38 @@ class CaptureObserver implements ObserverInterface
                 $shippingAmount     = $invoice->getShippingAmount();
                 $shippingTaxPercent = $this->getOrderShippingTax($invoice->getOrder()->getId());
 
-                if (!empty($shippingDiscounts)) {
-                    foreach ($shippingDiscounts as $ruleId) {
-                        $couponCodeData = $this->rule->create()->load($ruleId);
-                        $simpleAction   = $couponCodeData->getData('simple_action');
-                        $discountAmount = $couponCodeData->getData('discount_amount');
-                        if ($simpleAction == 'by_percent') {
-                            $discountPercentage[] = ($discountAmount / 100);
-                        }
-                    }
-                    $itemDiscount = $this->getItemDiscountByPercentage($discountPercentage);
-                }
-
-                $compAmountDiscount = 0;
-                if ($compAmount > 0) {
-                    /* add discount rate*/
-                    $compAmountDiscount = $compAmount + ($compAmount * ($itemDiscount / 100));
-                    /*Add tax percentage in compensation amount*/
-                    $compAmountDiscount = $compAmountDiscount + ($compAmountDiscount * ($shippingTaxPercent / 100));
-                    $compAmountDiscount = number_format($compAmountDiscount, 2, '.', '');
-                }
-
-                if ($discountOnAllItems) {
-                    $totalShipAmount = $shippingAmount + $compAmount;
-                } else {
-                    $totalShipAmount = $shippingAmount + $compAmountDiscount;
-                }
-
-                $totalShipAmount = number_format($totalShipAmount, 2, '.', '');
-
                 $orderline = new OrderLine(
                     'Shipping',
                     'shipping',
                     1,
-                    $totalShipAmount
+                    $shippingAmount
                 );
-
                 if ($discountOnAllItems) {
-                    $orderline->discount  = 0;
-                    $orderline->taxAmount = $shippingTax;
+                    $orderline->discount = 0;
                 } else {
-                    $orderline->discount = $itemDiscount;
-                    if ($shippingTaxPercent > 0) {
-                        $shippingAmount       = $shippingAmount * ($shippingTaxPercent / 100);
-                        $orderline->taxAmount = number_format($shippingAmount, 2, '.', '');
-                    } else {
-                        $orderline->taxAmount = 0;
-                    }
+                    $orderline->discount = ($invoice->getOrder()->getShippingDiscountAmount() / $invoice->getOrder()->getShippingAmount()) * 100;
                 }
-
+                if ($shippingTaxPercent > 0) {
+                    $shippingTax = $shippingAmount * ($shippingTaxPercent / 100);
+                    $shippingTax = number_format($shippingTax, 2, '.', '');
+                }
+                $orderline->taxAmount  = $shippingTax;
+                $orderline->taxPercent = $shippingTaxPercent;
                 $orderline->setGoodsType('shipment');
                 $orderlines[] = $orderline;
+
+                if ($compAmount > 0 && $discountOnAllItems == false) {
+                    /*Add tax percentage in compensation amount*/
+                    $compAmount = $compAmount + ($compAmount * ($shippingTaxPercent / 100));
+
+                    $orderline    = new OrderLine(
+                        "Shipping compensation",
+                        "comp-ship",
+                        1,
+                        $compAmount
+                    );
+                    $orderlines[] = $orderline;
+                }
             }
 
             $api = new CaptureReservation($this->systemConfig->getAuth($storeCode));
@@ -300,6 +289,20 @@ class CaptureObserver implements ObserverInterface
 
             $api->setAmount((float)number_format($invoice->getGrandTotal(), 2, '.', ''));
             $api->setOrderLines($orderlines);
+            $tracksCollection = $invoice->getOrder()->getTracksCollection();
+            $trackItems       = $tracksCollection->getItems();
+
+            if ($trackItems && is_array($trackItems)) {
+                $shippingTrackingInfo = [];
+                foreach ($trackItems as $track) {
+                    $shippingTrackingInfo[] = [
+                        'shippingCompany' => $track->getTitle(),
+                        'trackingNumber'  => $track->getTrackNumber()
+                    ];
+                }
+                $api->setTrackingInfo($shippingTrackingInfo);
+            }
+
             $api->setTransaction($payment->getLastTransId());
             /** @var CaptureReservationResponse $response */
             try {
@@ -312,25 +315,25 @@ class CaptureObserver implements ObserverInterface
                 $this->monolog->addCritical('Exception: ' . $e->getMessage());
             }
 
-            $rawresponse = $api->getRawResponse();
-            if (!empty($rawresponse)) {
-                $body = $rawresponse->getBody();
+            $rawResponse = $api->getRawResponse();
+            if (!empty($rawResponse)) {
+                $body = $rawResponse->getBody();
                 $this->monolog->addInfo('Response body: ' . $body);
-            }
 
-            //Update comments if capture fail
-            $xml = simplexml_load_string($body);
-            if ($xml->Body->Result == 'Error' || $xml->Body->Result == 'Failed') {
-                $orderObject->addStatusHistoryComment('Capture failed: ' . $xml->Body->MerchantErrorMessage)
-                            ->setIsCustomerNotified(false);
-                $orderObject->getResource()->save($orderObject);
-            }
+                //Update comments if capture fail
+                $xml = simplexml_load_string($body);
+                if ($xml->Body->Result == 'Error' || $xml->Body->Result == 'Failed') {
+                    $orderObject->addStatusHistoryComment('Capture failed: ' . $xml->Body->MerchantErrorMessage)
+                                ->setIsCustomerNotified(false);
+                    $orderObject->getResource()->save($orderObject);
+                }
 
-            $headdata = [];
-            foreach ($rawresponse->getHeaders() as $k => $v) {
-                $headdata[] = $k . ': ' . json_encode($v);
+                $headData = [];
+                foreach ($rawResponse->getHeaders() as $k => $v) {
+                    $headData[] = $k . ': ' . json_encode($v);
+                }
+                $this->monolog->addInfo('Response headers: ' . implode(", ", $headData));
             }
-            $this->monolog->addInfo('Response headers: ' . implode(", ", $headdata));
 
             if (!isset($response->Result) || $response->Result != 'Success') {
                 throw new \InvalidArgumentException('Could not capture reservation');
@@ -442,12 +445,18 @@ class CaptureObserver implements ObserverInterface
     }
 
     /**
-     * @param $storeScope
+     * @param $order
      *
      * @return bool
      */
-    private function storePriceIncTax($storeScope)
+    private function storePriceIncTax($order = null)
     {
+        if ($order !== null) {
+            if ($order->getValitorPriceIncludesTax() !== null) {
+                return $order->getValitorPriceIncludesTax();
+            }
+        }
+        $storeScope = \Magento\Store\Model\ScopeInterface::SCOPE_STORE;
         if ((int)$this->scopeConfig->getValue('tax/calculation/price_includes_tax', $storeScope) === 1) {
             return true;
         } else {
@@ -479,7 +488,6 @@ class CaptureObserver implements ObserverInterface
     ) {
         $taxPercent   = $item->getOrderItem()->getTaxPercent();
         $quantity     = $item->getQty();
-        $itemRowTotal = $item->getOrderItem()->getBaseRowTotal();
         $compensation = 0;
         //Discount compensation calculation - Gateway calculation pattern
         $gatewaySubTotal = ($unitPrice * $quantity) + $taxAmount;
@@ -492,12 +500,33 @@ class CaptureObserver implements ObserverInterface
             $cmsSubTotal  = $cmsSubTotal - ($cmsSubTotal * ($discountedAmount / 100));
             $compensation = $cmsSubTotal - $gatewaySubTotal;
         } elseif ($catalogDiscountCheck || empty($couponCodeAmount)) {
-            $cmsTaxCal    = $itemRowTotal * ($taxPercent / 100);
-            $cmsSubTotal  = $itemRowTotal + $cmsTaxCal;
+            $cmsSubTotal  = $item->getOrderItem()->getBaseRowTotal() + $item->getBaseTaxAmount();
             $compensation = $cmsSubTotal - $gatewaySubTotal;
         }
 
         return $compensation;
+    }
+
+    /**
+     * Get image url by imagename.
+     *
+     * @param        $order
+     * @param string $image
+     *
+     * @return string
+     */
+    protected function getProductImageUrl($order, $image)
+    {
+        $url = $image;
+        if ($image) {
+            if (is_string($image)) {
+                $url = $order->getStore()->getBaseUrl(
+                        \Magento\Framework\UrlInterface::URL_TYPE_MEDIA
+                    ) . 'catalog/product/' . $image;
+            }
+        }
+
+        return $url;
     }
 
     /**

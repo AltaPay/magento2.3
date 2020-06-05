@@ -1,4 +1,11 @@
 <?php
+/**
+ * Valitor Module for Magento 2.x.
+ *
+ * Copyright © 2020 Valitor. All rights reserved.
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
 
 namespace SDM\Valitor\Observer;
 
@@ -91,12 +98,10 @@ class CreditmemoRefundObserver implements ObserverInterface
             /** @var \Magento\Sales\Model\Order $order */
             $orderIncrementId = $memo->getOrder()->getIncrementId();
             $orderObject      = $this->order->loadByIncrementId($orderIncrementId);
-            $storeScope       = \Magento\Store\Model\ScopeInterface::SCOPE_STORE;
-            $storePriceIncTax = $this->storePriceIncTax($storeScope);
+            $storePriceIncTax = $this->storePriceIncTax($memo->getOrder());
             $storeCode        = $memo->getStore()->getCode();
             /** @var \Magento\Sales\Model\Order\Payment $payment */
-            $payment    = $memo->getOrder()->getPayment();
-            $storeScope = \Magento\Store\Model\ScopeInterface::SCOPE_STORE;
+            $payment = $memo->getOrder()->getPayment();
             if (in_array($payment->getMethod(), SystemConfig::getTerminalCodes())) {
                 $orderlines         = [];
                 $couponCode         = $memo->getDiscountDescription();
@@ -104,19 +109,6 @@ class CreditmemoRefundObserver implements ObserverInterface
                 $couponCodeAmount   = $memo->getDiscountAmount();
                 $compAmount         = $memo->getOrder()->getShippingDiscountTaxCompensationAmount();
                 $discountOnAllItems = $this->allItemsHaveDiscount($memo->getOrder()->getAllVisibleItems());
-                $shippingDiscounts  = array();
-                if (!empty($appliedRule)) {
-                    $appliedRuleArr = explode(",", $appliedRule);
-                    foreach ($appliedRuleArr as $ruleId) {
-                        $couponCodeData  = $this->rule->create()->load($ruleId);
-                        $applyToShipping = $couponCodeData->getData('apply_to_shipping');
-                        if ($applyToShipping) {
-                            if (!in_array($ruleId, $shippingDiscounts)) {
-                                $shippingDiscounts[] = $ruleId;
-                            }
-                        }
-                    }
-                }
                 foreach ($memo->getAllItems() as $item) {
                     $quantity    = $item->getQty();
                     $taxPercent  = $item->getOrderItem()->getTaxPercent();
@@ -136,17 +128,21 @@ class CreditmemoRefundObserver implements ObserverInterface
                         $discountAmount       = $item->getDiscountAmount();
                         $originalPrice        = $item->getOrderItem()->getOriginalPrice();
                         $itemDiscount         = 0;
-                        $unitPriceWithoutTax  = $originalPrice / $taxRate;
                         $catalogDiscountCheck = false;
 
                         if (!empty($discountAmount)) {
                             $itemDiscount = ($discountAmount * 100) / ($originalPrice * $quantity);
                         }
 
+                        if ($originalPrice == 0) {
+                            $originalPrice = $item->getPriceInclTax();
+                        }
+
                         if ($storePriceIncTax) {
-                            $unitPrice = bcdiv($unitPriceWithoutTax, 1, 2);
-                            $taxAmount = ($unitPriceWithoutTax * ($taxPercent / 100)) * $quantity;
-                            $taxAmount = number_format($taxAmount, 2, '.', '');
+                            $unitPriceWithoutTax = $originalPrice / $taxRate;
+                            $unitPrice           = bcdiv($unitPriceWithoutTax, 1, 2);
+                            $taxAmount           = ($unitPriceWithoutTax * ($taxPercent / 100)) * $quantity;
+                            $taxAmount           = number_format($taxAmount, 2, '.', '');
 
                             if ($originalPrice > 0 && $originalPrice > $priceInclTax && empty($discountAmount)) {
                                 $catalogDiscountCheck = true;
@@ -200,16 +196,30 @@ class CreditmemoRefundObserver implements ObserverInterface
                                 $catalogDiscountCheck
                             );
                             $orderline->taxAmount       = $taxAmount;
-                            $orderlines[]               = $orderline;
+                            $orderline->taxPercent      = $taxPercent;
+                            $orderline->productUrl      = $item->getOrderItem()->getProduct()->getProductUrl();
+                            $productThumb               = $item->getOrderItem()->getProduct()->getThumbnail();
+                            if (!empty($productThumb) && $productThumb !== 'no_selection') {
+                                $orderline->imageUrl = $this->getProductImageUrl($memo->getOrder(), $productThumb);
+                            }
+                            if ($quantity > 1) {
+                                $orderline->unitCode = "units";
+                            } else {
+                                $orderline->unitCode = "unit";
+                            }
+                            $orderlines[] = $orderline;
                             if ($roundingCompensationAmount > 0 || $roundingCompensationAmount < 0) {
-                                $orderline            = new OrderLine(
+                                $orderline             = new OrderLine(
                                     "Compensation Amount",
-                                    "comp",
+                                    "comp-" . $item->getOrderItem()->getItemId(),
                                     1,
                                     $roundingCompensationAmount
                                 );
-                                $orderline->taxAmount = 0.00;
-                                $orderlines[]         = $orderline;
+                                $orderline->taxAmount  = 0;
+                                $orderline->taxPercent = 0;
+                                $orderline->unitCode   = "unit";
+                                $orderline->discount   = 0;
+                                $orderlines[]          = $orderline;
                             }
                         }
                     }
@@ -238,57 +248,38 @@ class CreditmemoRefundObserver implements ObserverInterface
                     $shippingAmount     = $memo->getShippingAmount();
                     $shippingTaxPercent = $this->getOrderShippingTax($memo->getOrder()->getId());
 
-                    if (!empty($shippingDiscounts)) {
-                        foreach ($shippingDiscounts as $ruleId) {
-                            $couponCodeData = $this->rule->create()->load($ruleId);
-                            $simpleAction   = $couponCodeData->getData('simple_action');
-                            $discountAmount = $couponCodeData->getData('discount_amount');
-                            if ($simpleAction == 'by_percent') {
-                                $discountPercentage[] = ($discountAmount / 100);
-                            }
-                        }
-                        $itemDiscount = $this->getItemDiscountByPercentage($discountPercentage);
-                    }
-
-                    $compAmountDiscount = 0;
-                    if ($compAmount > 0) {
-                        /* add discount rate*/
-                        $compAmountDiscount = $compAmount + ($compAmount * ($itemDiscount / 100));
-                        /*Add tax percentage in compensation amount*/
-                        $compAmountDiscount = $compAmountDiscount + ($compAmountDiscount * ($shippingTaxPercent / 100));
-                        $compAmountDiscount = number_format($compAmountDiscount, 2, '.', '');
-                    }
-
-                    if ($discountOnAllItems) {
-                        $totalShipAmount = $shippingAmount + $compAmount;
-                    } else {
-                        $totalShipAmount = $shippingAmount + $compAmountDiscount;
-                    }
-
-                    $totalShipAmount = number_format($totalShipAmount, 2, '.', '');
-
                     $orderline = new OrderLine(
                         'Shipping',
                         'shipping',
                         1,
-                        $totalShipAmount
+                        $shippingAmount
                     );
-
                     if ($discountOnAllItems) {
-                        $orderline->discount  = 0;
-                        $orderline->taxAmount = $shippingTax;
+                        $orderline->discount = 0;
                     } else {
-                        $orderline->discount = $itemDiscount;
-                        if ($shippingTaxPercent > 0) {
-                            $shippingAmount       = $shippingAmount * ($shippingTaxPercent / 100);
-                            $orderline->taxAmount = number_format($shippingAmount, 2, '.', '');
-                        } else {
-                            $orderline->taxAmount = 0;
-                        }
+                        $orderline->discount = ($memo->getOrder()->getShippingDiscountAmount() / $memo->getOrder()->getShippingAmount()) * 100;
                     }
-
+                    if ($shippingTaxPercent > 0) {
+                        $shippingTax = $shippingAmount * ($shippingTaxPercent / 100);
+                        $shippingTax = number_format($shippingTax, 2, '.', '');
+                    }
+                    $orderline->taxAmount  = $shippingTax;
+                    $orderline->taxPercent = $shippingTaxPercent;
                     $orderline->setGoodsType('shipment');
                     $orderlines[] = $orderline;
+
+                    if ($compAmount > 0 && $discountOnAllItems == false) {
+                        /*Add tax percentage in compensation amount*/
+                        $compAmount = $compAmount + ($compAmount * ($shippingTaxPercent / 100));
+
+                        $orderline    = new OrderLine(
+                            "Shipping compensation",
+                            "comp-ship",
+                            1,
+                            $compAmount
+                        );
+                        $orderlines[] = $orderline;
+                    }
                 }
 
                 $refund = new RefundCapturedReservation($this->systemConfig->getAuth($storeCode));
@@ -430,12 +421,18 @@ class CreditmemoRefundObserver implements ObserverInterface
     }
 
     /**
-     * @param $storeScope
+     * @param $order
      *
      * @return bool
      */
-    private function storePriceIncTax($storeScope)
+    private function storePriceIncTax($order = null)
     {
+        if ($order !== null) {
+            if ($order->getValitorPriceIncludesTax() !== null) {
+                return $order->getValitorPriceIncludesTax();
+            }
+        }
+        $storeScope = \Magento\Store\Model\ScopeInterface::SCOPE_STORE;
         if ((int)$this->scopeConfig->getValue('tax/calculation/price_includes_tax', $storeScope) === 1) {
             return true;
         } else {
@@ -465,27 +462,47 @@ class CreditmemoRefundObserver implements ObserverInterface
         $storePriceIncTax,
         $catalogDiscountCheck
     ) {
-        $taxPercent         = $item->getOrderItem()->getTaxPercent();
-        $quantity           = $item->getQty();
-        $itemRowTotal       = $item->getOrderItem()->getBaseRowTotal();
-        $compensationAmount = 0;
+        $taxPercent   = $item->getOrderItem()->getTaxPercent();
+        $quantity     = $item->getQty();
+        $compensation = 0;
         //Discount compensation calculation - Gateway calculation pattern
         $gatewaySubtotal = ($unitPrice * $quantity) + $taxAmount;
         $gatewaySubtotal = $gatewaySubtotal - ($gatewaySubtotal * ($discountedAmount / 100));
         // Magento calculation pattern
         if (abs($couponCodeAmount) > 0 && $storePriceIncTax) {
-            $magentoPriceCal    = $unitPriceWithoutTax * $quantity;
-            $magentoTaxCal      = $magentoPriceCal * ($taxPercent / 100);
-            $magentoSubtotal    = $magentoPriceCal + $magentoTaxCal;
-            $magentoSubtotal    = $magentoSubtotal - ($magentoSubtotal * ($discountedAmount / 100));
-            $compensationAmount = $magentoSubtotal - $gatewaySubtotal;
+            $magentoPriceCal = $unitPriceWithoutTax * $quantity;
+            $magentoTaxCal   = $magentoPriceCal * ($taxPercent / 100);
+            $magentoSubtotal = $magentoPriceCal + $magentoTaxCal;
+            $magentoSubtotal = $magentoSubtotal - ($magentoSubtotal * ($discountedAmount / 100));
+            $compensation    = $magentoSubtotal - $gatewaySubtotal;
         } elseif ($catalogDiscountCheck || empty($couponCodeAmount)) {
-            $magentoTaxCal      = $itemRowTotal * ($taxPercent / 100);
-            $magentoSubtotal    = $itemRowTotal + $magentoTaxCal;
-            $compensationAmount = $magentoSubtotal - $gatewaySubtotal;
+            $cmsSubTotal  = $item->getOrderItem()->getBaseRowTotal() + $item->getBaseTaxAmount();
+            $compensation = $cmsSubTotal - $gatewaySubtotal;
         }
 
-        return $compensationAmount;
+        return $compensation;
+    }
+
+    /**
+     * Get image url by imagename.
+     *
+     * @param        $order
+     * @param string $image
+     *
+     * @return string
+     */
+    protected function getProductImageUrl($order, $image)
+    {
+        $url = $image;
+        if ($image) {
+            if (is_string($image)) {
+                $url = $order->getStore()->getBaseUrl(
+                        \Magento\Framework\UrlInterface::URL_TYPE_MEDIA
+                    ) . 'catalog/product/' . $image;
+            }
+        }
+
+        return $url;
     }
 
     /**
